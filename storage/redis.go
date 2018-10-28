@@ -1,6 +1,8 @@
 package storage
 
 import (
+	"time"
+
 	"github.com/garyburd/redigo/redis"
 	"github.com/pkg/errors"
 	"github.com/poccariswet/shorterql/hash"
@@ -57,14 +59,20 @@ func (u *UrlSho) Set() error {
 		return errors.Wrapf(err, "HSET %s count err", u.ID)
 	}
 
+	_, err = conn.Do("HSET", u.ID, "createdAt", u.CreatedAt)
+	if err != nil {
+		return errors.Wrapf(err, "HSET %s created at err", u.ID)
+	}
+
 	return nil
 }
 
 func SaveURL(longURL string) (string, error) {
 	u := &UrlSho{
-		ID:      hash.CreateHashID(),
-		LongURL: longURL,
-		Count:   0,
+		ID:        hash.CreateHashID(),
+		LongURL:   longURL,
+		Count:     0,
+		CreatedAt: time.Now(),
 	}
 	if err := u.Set(); err != nil {
 		return "", errors.Wrap(err, "redis url set err")
