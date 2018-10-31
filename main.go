@@ -2,45 +2,52 @@ package main
 
 import (
 	"context"
+	"fmt"
+	"log"
+	"net/http"
 	"os"
 	"os/signal"
+	"syscall"
 	"time"
 
-	"github.com/go-playground/validator"
-	"github.com/labstack/echo"
-	"github.com/labstack/gommon/log"
 	"github.com/poccariswet/shorterql/handler"
+	"github.com/poccariswet/shorterql/storage"
 )
 
-func main() {
-	e := echo.New()
-	e.Validator = &handler.CustomValidator{
-		Validator: validator.New(),
-	}
-	e.Logger.SetLevel(log.INFO)
+func init() {
+	storage.Pool = storage.NewPool(":6379")
+}
 
-	e.GET("/:id", handler.RedirectHandler)
-	e.GET("urlshorter/status/:id", handler.UrlShorterStatusHandler)
-	e.POST("urlshorter", handler.UrlShorterHandler)
+func main() {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", handler.RedirectHandler)
+	mux.HandleFunc("/urlshorter", handler.UrlShorterHandler)
 
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8080"
 	}
 
-	// Start server
+	srv := &http.Server{
+		Addr:    ":" + port,
+		Handler: mux,
+	}
+
 	go func() {
-		if err := e.Start(":" + port); err != nil {
-			e.Logger.Info("shut down the server")
+		if err := srv.ListenAndServe(); err != http.ErrServerClosed {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
 		}
 	}()
 
-	quit := make(chan os.Signal)
-	signal.Notify(quit, os.Interrupt)
-	<-quit
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGTERM, os.Interrupt)
+	log.Printf("SIGNAL %d received, then shutting down...\n", <-quit)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	if err := e.Shutdown(ctx); err != nil {
-		e.Logger.Fatal(err)
+	if err := srv.Shutdown(ctx); err != nil {
+		log.Println("Failed to gracefully shutdown:", err)
 	}
+	log.Println("Server shutdown")
 }
