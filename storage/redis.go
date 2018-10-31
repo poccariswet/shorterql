@@ -1,6 +1,8 @@
 package storage
 
 import (
+	"net/url"
+	"os"
 	"time"
 
 	"github.com/garyburd/redigo/redis"
@@ -54,6 +56,11 @@ func (u *UrlSho) Set() error {
 		return errors.Wrapf(err, "HSET %s long_url err", u.ID)
 	}
 
+	_, err = conn.Do("HSET", u.ID, "short_url", u.ShortURL)
+	if err != nil {
+		return errors.Wrapf(err, "HSET %s short_url err", u.ID)
+	}
+
 	_, err = conn.Do("HSET", u.ID, "count", u.Count)
 	if err != nil {
 		return errors.Wrapf(err, "HSET %s count err", u.ID)
@@ -67,21 +74,22 @@ func (u *UrlSho) Set() error {
 	return nil
 }
 
-func SaveURL(longURL string) (string, error) {
+func SaveURL(longURL string) (*UrlSho, error) {
 	u := &UrlSho{
 		ID:        hash.CreateHashID(),
 		LongURL:   longURL,
 		Count:     0,
-		CreatedAt: time.Now(),
+		CreatedAt: time.Now().String(),
 	}
+	u.ShortURL = CreateURL(u.ID)
 	if err := u.Set(); err != nil {
-		return "", errors.Wrap(err, "redis url set err")
+		return nil, errors.Wrap(err, "redis url set err")
 	}
 
-	return u.ID, nil
+	return u, nil
 }
 
-func FetchURLInfo(id string) (*UrlSho, error) {
+func FetchURLInfoByID(id string) (*UrlSho, error) {
 	conn := Pool.Get()
 	defer conn.Close()
 
@@ -96,4 +104,24 @@ func FetchURLInfo(id string) (*UrlSho, error) {
 	}
 
 	return &u, nil
+}
+
+// TODO fetch all list
+func FetchURLInfoList() ([]UrlSho, error) {
+	return []UrlSho{}, nil
+}
+
+func CreateURL(id string) string {
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "8080"
+	}
+
+	u := &url.URL{
+		Scheme: "http",
+		Host:   "localhost:" + port,
+		Path:   id,
+	}
+
+	return u.String()
 }
